@@ -1,0 +1,325 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/fuel"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum GlobalRoles {
+  SUPER_ADMIN
+  USER
+  // (future roles can be added here)
+}
+
+enum OrgRoles {
+  ADMIN
+  USER
+}
+
+enum SectorTypes {
+  GOVERNMENT
+  PRIVATE
+}
+
+enum FuelTypes {
+  PETROL
+  DIESEL
+}
+
+enum UnitsOfMeasure {
+  KM
+  HOURS
+} 
+
+model Users {
+  id              Int         @id     @default(autoincrement())
+  username        String      @unique
+  password        String
+  phone_number    String      @unique
+  fullname        String?
+  role            GlobalRoles    @default(USER)
+  is_active       Boolean     @default(true)
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+
+
+  organizations    UserOrganizations[]
+}
+
+
+model Organizations {
+  id              Int         @id     @default(autoincrement())
+  name            String
+  org_type        SectorTypes
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+
+  users           UserOrganizations[]
+  fuel_bunks      FuelBunks[]
+  vehicle_categories  VehicleCategories[]
+  vehicles        Vehicles[]
+  drivers         Drivers[]
+  main_logs       MainTriplogs[]
+  latest_logs     LatestTriplogs[]
+}
+
+model UserOrganizations {
+  id              Int         @id      @default(autoincrement())
+  user_id         Int
+  organization_id Int
+  role            OrgRoles    @default(USER)
+
+
+  user            Users       @relation(fields: [user_id],references: [id])
+  organization    Organizations @relation(fields: [organization_id],references: [id])
+
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+
+  @@unique([user_id,organization_id])
+  @@index([user_id])
+  @@index([organization_id])
+}
+
+model FuelBunks {
+  id              Int         @id     @default(autoincrement())
+  name            String
+  address         String    
+  is_active       Boolean     @default(true)
+  bunk_type       SectorTypes
+
+
+  organization_id Int
+  organization    Organizations @relation(fields: [organization_id],references: [id])
+
+  fuel_prices     FuelPrices[]
+  main_logs       MainTriplogs[]
+  latest_logs     LatestTriplogs[]
+
+  @@index([organization_id])
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+}
+
+
+model FuelPrices {
+  id              Int         @id     @default(autoincrement())
+  fuel_type       FuelTypes
+  price_per_litre Decimal     @db.Decimal(10,2)
+  date            DateTime
+
+
+  bunk_id         Int
+  fuel_bunk       FuelBunks   @relation(fields: [bunk_id],references: [id])
+
+  @@index([bunk_id])
+  @@index([date])
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+}
+
+
+model VehicleCategories {
+  id              Int         @id     @default(autoincrement())
+  name            String
+  unit_of_measure UnitsOfMeasure
+  target_efficiency Decimal   @db.Decimal(10,2)  //km/l , l/hr
+
+  organization_id Int
+  organization    Organizations @relation(fields: [organization_id],references: [id])
+
+  vehicles        Vehicles[]
+  main_logs       MainTriplogs[]
+  latest_logs     LatestTriplogs[]
+
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+}
+
+model Vehicles {
+  id              Int         @id     @default(autoincrement())
+  vehicle_number  String      @unique
+  last_reading    Decimal?    // odo or hr
+  last_logged_dt  DateTime?
+  last_fuel_filled_date DateTime?
+
+  organization_id Int
+  organization    Organizations @relation(fields: [organization_id],references: [id])
+  category_id     Int
+  category        VehicleCategories @relation(fields: [category_id],references: [id])
+  driver_id       Int?
+  default_driver  Drivers?     @relation(fields: [driver_id],references: [id])
+
+
+  enable_gps      Boolean     @default(false)
+  gps_setting     GpsSettings?
+
+  
+  main_logs       MainTriplogs[]
+  latest_logs     LatestTriplogs[]
+  is_active       Boolean     @default(true)
+
+  @@index([organization_id])
+  @@index([category_id])
+  @@index([driver_id])
+  @@unique([organization_id, vehicle_number])
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+}
+
+model GpsSettings {
+  id              Int         @id   @default(autoincrement())
+  vehicle_id      Int         @unique
+  vehicle         Vehicles    @relation(fields: [vehicle_id],references: [id])
+
+  gps_provider_id Int
+  gps_provider    GpsProviders  @relation(fields: [gps_provider_id],references: [id])
+
+
+  formate         Json?
+}
+
+model GpsProviders {
+  id              Int         @id   @default(autoincrement())
+  name            String      @unique
+  default_formate Json?
+  gps_settings    GpsSettings[]
+}
+
+model Drivers {
+  id              Int         @id       @default(autoincrement())
+  name            String
+  contact_number  String
+
+  organization_id Int
+  organization    Organizations @relation(fields: [organization_id],references: [id])
+  vehicles        Vehicles[]
+  main_logs       MainTriplogs[]
+  latest_logs     LatestTriplogs[]
+
+  is_active       Boolean     @default(true)
+
+  @@index([organization_id])
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+}
+
+
+// FOR MAINTAINING LAST 30 DAYS DATA FOR ALL ORGANIZATIONS
+model LatestTriplogs {
+  id                        Int           @id        @default(autoincrement())
+  entry_date                DateTime
+  organization_id           Int?
+  organization_name         String
+
+  vehicle_id                Int?
+  vehicle_number            String
+  category_id               Int?
+  category_name             String
+  measure_unit              UnitsOfMeasure
+  driver_id                 Int?
+  driver_name               String
+  bunk_id                   Int?
+  fuel_bunk_name            String
+
+  start_reading             Decimal     @db.Decimal(10,2)
+  end_reading               Decimal     @db.Decimal(10,2)
+  reading_difference        Decimal     @db.Decimal(10,2)
+
+  gps_readings              Decimal?    @db.Decimal(10,2)
+
+  previous_excess_fuel      Decimal?    @db.Decimal(10,2)
+  fuel_filled               Decimal     @db.Decimal(10,2)
+  fuel_filled_date          DateTime
+  fuel_type                 FuelTypes
+  total_fuel_cost           Decimal     @db.Decimal(10,2)
+
+  trip_count                Int
+  remarks                   String      @db.Text
+
+  images                    Json?
+
+
+  vehicle                   Vehicles?            @relation(fields: [vehicle_id],references: [id],onDelete: SetNull)
+  organization              Organizations?       @relation(fields: [organization_id],references: [id],onDelete: SetNull)
+  category                  VehicleCategories?   @relation(fields: [category_id],references: [id],onDelete: SetNull)
+  driver                    Drivers?             @relation(fields: [driver_id],references: [id],onDelete: SetNull)
+  bunk                      FuelBunks?           @relation(fields: [bunk_id],references: [id],onDelete: SetNull) 
+
+
+  @@index([vehicle_id])
+  @@index([organization_id])
+  @@index([category_id])
+  @@index([bunk_id])
+  @@index([driver_id])
+  @@index([entry_date])
+  @@index([fuel_filled_date])
+
+
+  created_at                DateTime    @default(now())
+  updated_at                DateTime    @updatedAt
+}
+
+model MainTriplogs {
+  id                        Int           @id        @default(autoincrement())
+  entry_date                DateTime
+  organization_id           Int?
+  organization_name         String
+
+  vehicle_id                Int?
+  vehicle_number            String
+  category_id               Int?
+  category_name             String
+  measure_unit              UnitsOfMeasure
+  driver_id                 Int?
+  driver_name               String
+  bunk_id                   Int?
+  fuel_bunk_name            String
+
+  start_reading             Decimal
+  end_reading               Decimal
+  reading_difference        Decimal
+
+  gps_readings              Decimal?
+
+  previous_excess_fuel      Decimal?
+  fuel_filled               Decimal
+  fuel_filled_date          DateTime
+  fuel_type                 FuelTypes
+  total_fuel_cost           Decimal
+
+  trip_count                Int
+  remarks                   String      @db.Text
+
+  images                    Json?
+
+
+  vehicle                   Vehicles?            @relation(fields: [vehicle_id],references: [id],onDelete: SetNull)
+  organization              Organizations?       @relation(fields: [organization_id],references: [id],onDelete: SetNull)
+  category                  VehicleCategories?   @relation(fields: [category_id],references: [id],onDelete: SetNull)
+  driver                    Drivers?             @relation(fields: [driver_id],references: [id],onDelete: SetNull)
+  bunk                      FuelBunks?           @relation(fields: [bunk_id],references: [id],onDelete: SetNull) 
+
+
+  
+  @@index([vehicle_id])
+  @@index([organization_id])
+  @@index([category_id])
+  @@index([bunk_id])
+  @@index([driver_id])
+  @@index([entry_date])
+  @@index([fuel_filled_date])
+
+
+  created_at                DateTime    @default(now())
+  updated_at                DateTime    @updatedAt
+}
